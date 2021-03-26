@@ -30,46 +30,56 @@ J1 = undistortImage(I,params);
 % title('Original Image (left) vs. Corrected Image (right)');
 
 %% BEV - I must tune Height and Pitch
+% height=1.8 pitch=-0.7 distAhead = 35 spaceToOneSide = 4 bottomOffset=9
 focalLength = params.Intrinsics.FocalLength; 
 principalPoint = params.Intrinsics.PrincipalPoint; 
 imageSize = params.ImageSize; 
 camIntrinsics = cameraIntrinsics(focalLength,principalPoint,imageSize);
-height = 2.1; % meters 
-pitch = -0.7; % degree pitch toward the ground
-
-
-sensor = monoCamera(camIntrinsics,height,'Pitch',pitch);
-
-distAhead = 35; % 30
-spaceToOneSide = 4; % 6
-bottomOffset = 9; % 3
+% n = 2;
+% height = solutions(n).height; % meters 
+% pitch = solutions(n).pitch; % -0.7, -1.5 degree pitch toward the ground
+imageNumber = 8; % 5:8
+height = 1.76;
+pitch = -0.9;
+distAhead = 30; % 35
+spaceToOneSide = 4; % 4
+bottomOffset = 9; % 9
 outView = [bottomOffset,distAhead,-spaceToOneSide,spaceToOneSide];
-
 outImageSize = [NaN,250];
-birdsEye = birdsEyeView(sensor,outView,outImageSize);
-I = imread(string(images.Files(5))); % 5:8
+
+figure;
+for iN=5:8
+    sensor = monoCamera(camIntrinsics,height,'Pitch',pitch);    
+    birdsEye = birdsEyeView(sensor,outView,outImageSize);
+    I = imread(string(images.Files(iN))); % 5:8
+    BEV = transformImage(birdsEye,I);        
+    subplot(1,4,iN-4); 
+    imshow(BEV)
+    title(sprintf('height: %f, pitch: %f',height, pitch))
+%     hold on
+%     xline(43+125,"g")
+%     xline(62,"g")
+%     hold off
+end
+
+I = imread(string(images.Files(imageNumber))); % 5:8
 BEV = transformImage(birdsEye,I);
-% figure; imshow(I);
-%     figure; imshow(BEV)
 
 %% Grayscale conversion and noise reduction
 BEV_grayscale = rgb2gray(BEV);
 BEV_grayscale_blur = imgaussfilt(BEV_grayscale);
-%     figure; imshowpair(BEV_grayscale, BEV_grayscale_blur,"montage");
+% figure; imshowpair(BEV_grayscale, BEV_grayscale_blur,"montage");
 
 %% Image binarization
-
 % BEV_binarized = imbinarize(BEV_grayscale_blur, 'adaptive');
-BEV_binarized = imbinarize(BEV_grayscale_blur)
-% figure; imshow(BEV_binarized)
-% title(sprintf('Pitch: %0.1f', pitch))
+BEV_binarized = imbinarize(BEV_grayscale_blur);
+figure; imshow(BEV_binarized)
 
 
 %% Solution
-
 y_axis = sum(BEV_binarized);
-% figure
-% plot(y_axis)
+figure
+plot(y_axis)
 % title(sprintf('Lane detection - Height: %0.1f', height))
 % xlabel("Pixel positions")
 % ylabel("Counts")
@@ -85,7 +95,59 @@ figure; imshow(BEV)
 hold on
 xline(ind1,"g")
 xline(ind2+length(y_axis)/2,"g")
+title(sprintf('pitch: %0.1f', pitch))
 hold off
+
+%% GridSearch
+I = imread(string(images.Files(5))); % 5:8
+min_std = +inf;
+final_height = 0;
+final_pitch = 0;
+count = 1;
+count2 = 1;
+clear solutions
+
+focalLength = params.Intrinsics.FocalLength; 
+principalPoint = params.Intrinsics.PrincipalPoint; 
+imageSize = params.ImageSize; 
+camIntrinsics = cameraIntrinsics(focalLength,principalPoint,imageSize);
+distAhead = 30; % 35
+spaceToOneSide = 5; % 4
+bottomOffset = 9; % 9
+outView = [bottomOffset,distAhead,-spaceToOneSide,spaceToOneSide];
+outImageSize = [NaN,250];
+
+% 1600 cycles
+for height=1.6:0.005:1.8 % 40
+    for pitch=-1:0.005:-0.8 % 40
+        sensor = monoCamera(camIntrinsics,height,'Pitch',pitch);    
+        birdsEye = birdsEyeView(sensor,outView,outImageSize);        
+        BEV = transformImage(birdsEye,I);
+        
+        BEV_grayscale = rgb2gray(BEV);
+        BEV_grayscale_blur = imgaussfilt(BEV_grayscale);
+        BEV_binarized = imbinarize(BEV_grayscale_blur);
+        
+        y_axis = sum(BEV_binarized);
+        y_axis_normalized = normalize(y_axis);
+        first_half = y_axis_normalized(1:length(y_axis_normalized)/2);
+        second_half = y_axis_normalized((length(y_axis_normalized)/2)+1:end);
+        
+        actual_std_sum = std(first_half) + std(second_half);
+        if actual_std_sum < min_std
+           min_std = actual_std_sum;
+           
+           solutions(count).std = actual_std_sum;
+           solutions(count).height = height;
+           solutions(count).pitch = pitch;
+           
+           count = count + 1;
+        end       
+        count2 = count2 + 1;
+    end
+end
+count
+count2
 
 
 
