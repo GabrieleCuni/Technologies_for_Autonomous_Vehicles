@@ -1,6 +1,6 @@
+close all
+
 %% Prepare data set for camera calibration
-%returns an M-by-2 matrix containing M [x, y] corner coordinates for the squares on a checkerboard. 
-%The point [0,0] corresponds to the lower-right corner of the top-left square of the board.
 images = imageDatastore(".");
 [imagePoints, boardSize] = detectCheckerboardPoints(images.Files(1:4));
 squareSizeInMM = 29;
@@ -12,68 +12,72 @@ I = readimage(images,1);
 imageSize = [size(I, 1),size(I, 2)];
 params = estimateCameraParameters(imagePoints,worldPoints,'ImageSize',imageSize);
 
-I = imread(string(images.Files(1)));
-J1 = undistortImage(I,params);
-
 %% BEV - I must tune Height and Pitch
-% height=1.8 pitch=-0.7 distAhead = 35 spaceToOneSide = 4 bottomOffset=9
 focalLength = params.Intrinsics.FocalLength; 
 principalPoint = params.Intrinsics.PrincipalPoint; 
 imageSize = params.ImageSize; 
 camIntrinsics = cameraIntrinsics(focalLength,principalPoint,imageSize);
 % n = 2;
 % height = solutions(n).height; % meters 
-% pitch = solutions(n).pitch; % -0.7, -1.5 degree pitch toward the ground
-imageNumber = 8; % 5:8
+% pitch = solutions(n).pitch; 
+% imageNumber = 8; % 5:8
 height = 1.76;
 pitch = -0.9;
-distAhead = 30; % 35
-spaceToOneSide = 4; % 4
-bottomOffset = 9; % 9
+distAhead = 30; 
+spaceToOneSide = 4; 
+bottomOffset = 9; 
 outView = [bottomOffset,distAhead,-spaceToOneSide,spaceToOneSide];
 outImageSize = [NaN,250];
 
-figure;
 for iN=5:8
     sensor = monoCamera(camIntrinsics,height,'Pitch',pitch);    
     birdsEye = birdsEyeView(sensor,outView,outImageSize);
-    I = imread(string(images.Files(iN))); % 5:8
-    BEV = transformImage(birdsEye,I);        
-    subplot(3,4,iN-4); 
-    imshow(BEV)
-    title(sprintf('Image: %d, height: %0.2f, pitch: %0.1f',iN-4, height, pitch))
+    image = imread(string(images.Files(iN))); % 5:8
+    image_undistored = undistortImage(image,params);
+    BEV = transformImage(birdsEye,image_undistored);        
 
     %Grayscale conversion and noise reduction
     BEV_grayscale = rgb2gray(BEV);
     BEV_grayscale_blur = imgaussfilt(BEV_grayscale);
-    % figure; imshowpair(BEV_grayscale, BEV_grayscale_blur,"montage");
 
     %Image binarization
-    % BEV_binarized = imbinarize(BEV_grayscale_blur, 'adaptive');
     BEV_binarized = imbinarize(BEV_grayscale_blur);
-    subplot(3,4,iN-4+4)
-    imshow(BEV_binarized)
 
-    %Solution
+    % Find out two maximum
     y_axis = sum(BEV_binarized);
-%     subplot(4,4, iN-4+8)
-%     plot(y_axis)
-    % title(sprintf('Lane detection - Height: %0.1f', height))
-    % xlabel("Pixel positions")
-    % ylabel("Counts")
-
-    % Output
     first_half = y_axis(1:length(y_axis)/2);
     second_half = y_axis((length(y_axis)/2)+1:end);
-
     [max1, ind1] = max(first_half);
     [max2, ind2] = max(second_half);
-
-    subplot(3,4,iN-4+8); 
+    
+    %Plotting
+    figure(1)
+    subplot(1,4,iN-4); 
     imshow(BEV)
     hold on
     xline(ind1,"g")
     xline(ind2+length(y_axis)/2,"g")
+    hold off
+    
+    BEV_LowLeftLanePoint = [ind1 650];
+    BEV_LowRightLanePoint = [ind2+length(y_axis)/2, 650];
+    BEV_HightLeftLanePoint = [ind1 5];
+    BEV_HightRightLanePoint = [ind2+length(y_axis)/2, 5];
+    origin_LowLeftLanePoint = vehicleToImage(sensor, imageToVehicle(birdsEye, BEV_LowLeftLanePoint));
+    origin_LowRightLanePoint = vehicleToImage(sensor, imageToVehicle(birdsEye, BEV_LowRightLanePoint));
+    origin_HightLeftLanePoint = vehicleToImage(sensor, imageToVehicle(birdsEye, BEV_HightLeftLanePoint));
+    origin_HightRightLanePoint = vehicleToImage(sensor, imageToVehicle(birdsEye, BEV_HightRightLanePoint));
+
+    figure(2)
+    subplot(2,2,iN-4)
+    imshow(image_undistored)
+    hold on
+    x=[origin_LowLeftLanePoint(1) origin_HightLeftLanePoint(1)];
+    y=[origin_LowLeftLanePoint(2) origin_HightLeftLanePoint(2)];
+    line(x,y, "Color","green", "LineWidth",2)
+    x=[origin_LowRightLanePoint(1) origin_HightRightLanePoint(1)];
+    y=[origin_LowRightLanePoint(2) origin_HightRightLanePoint(2)];
+    line(x,y, "Color","green", "LineWidth",2)
     hold off
 end
 
@@ -128,10 +132,6 @@ end
 % count
 % count2
 
-%     hold on
-%     xline(43+125,"g")
-%     xline(62,"g")
-%     hold off
 
 
 
